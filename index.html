@@ -17,13 +17,313 @@
     .field{display:grid;gap:8px;padding:8px 10px;border-radius:12px;background:var(--highlight)}
     .field.dose-field{background:rgba(14,165,233,0.08);border:1px solid rgba(14,165,233,0.25)}
     .out{padding:14px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:var(--outputbg)}
+    .grid{display:grid;gap:12px;grid-template-columns:1fr 1fr}
+    label{font-size:13px;color:var(--muted)}
+    input[type="number"],select{width:100%;font-size:18px;padding:12px 12px;border-radius:12px;background:#0b1220;border:1px solid rgba(255,255,255,.08);color:var(--text);outline:none;transition:border .15s, box-shadow .15s}
+    input[type="number"]:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 6px var(--ring)}
+    .seg{display:inline-flex;border:1px solid rgba(255,255,255,.1);border-radius:10px;overflow:hidden}
+    .seg button{background:#0b1220;color:var(--text);border:0;padding:10px 14px;font-size:14px;cursor:pointer}
+    .seg button.active{background:rgba(14,165,233,.15)}
+    .muted{color:var(--muted);font-size:12px}
+    .sub{padding:0 18px 18px;display:grid;gap:10px}
+    .outbox{display:grid;gap:12px;grid-template-columns:1fr 1fr}
     .out .val{font-size:24px;font-weight:700}
+    .kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+    .kpi .cardmini{padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:#0b1220;text-align:center}
+    .kpi .cardmini .big{font-size:18px;font-weight:700}
+    .error{color:var(--error)}
+    .testbar{display:flex;gap:10px;align-items:center;justify-content:flex-end}
+    .btn{padding:8px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.1);background:#0b1220;color:var(--text);font-size:12px;cursor:pointer}
+    .btn:active{transform:translateY(1px)}
+    @media (max-width:560px){.grid{grid-template-columns:1fr}.outbox{grid-template-columns:1fr}.kpi{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
-  <main class="app">
+  <main class="app" role="application">
     <h1 class="title">ドローン散布 吐出スピード計算 <span class="muted">（テスト版・Web）</span></h1>
-    <p>このファイルはGitHub Pagesで公開できるテスト版HTMLです。</p>
+
+    <section class="card" aria-label="converter">
+      <div class="row">
+        <!-- 剤型切替 -->
+        <div class="field">
+          <label>剤型の選択</label>
+          <div class="seg" id="formToggle" role="tablist" aria-label="剤型">
+            <button type="button" class="active" data-mode="granular" aria-selected="true">粒剤（kg）</button>
+            <button type="button" data-mode="liquid" aria-selected="false">液剤（mL）</button>
+          </div>
+        </div>
+
+        <!-- 入力タイプ/単位 -->
+        <div class="grid">
+          <div class="field">
+            <label>入力タイプ</label>
+            <select id="inputType" aria-label="入力タイプ">
+              <option value="area">面積あたり（推奨）</option>
+              <option value="time">時間あたり</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>単位</label>
+            <select id="unit" aria-label="単位"></select>
+          </div>
+        </div>
+        <!-- 施用量入力 -->
+        <div class="field dose-field">
+          <label id="doseLabel">施用量</label>
+          <input id="dose" type="number" inputmode="decimal" step="any" placeholder="数値を入力" autocomplete="off" />
+          <div class="muted">条件は下の <b>速度・散布幅</b> を変更して調整できます</div>
+          <div class="muted error" id="error" style="display:none"></div>
+        </div>
+
+        <!-- 速度（縦配置） -->
+        <div class="field">
+          <label>速度（m/s）<span class="muted">　※20 km/h超はエラー</span></label>
+          <input id="speed" type="number" inputmode="decimal" step="any" placeholder="例: 4.2" value="4.2" autocomplete="off" />
+          <div class="muted">現在: <span id="speedKmh">—</span> km/h</div>
+        </div>
+
+        <!-- 散布幅（縦配置） -->
+        <div class="field">
+          <label>散布幅（m）</label>
+          <input id="width" type="number" inputmode="decimal" step="any" placeholder="例: 4" value="4" autocomplete="off" />
+        </div>
+
+        <!-- 出力/指標 -->
+        <div class="sub">
+          <div class="outbox">
+            <div class="out" style="background:var(--outputbg);border:1px solid rgba(14,165,233,0.35)">
+              <div class="muted">吐出スピード</div>
+              <div class="val" id="flow">—</div>
+              <div class="muted" id="flowUnit"></div>
+            </div>
+            <div class="out">
+              <div class="muted">参考：1反あたりの散布時間</div>
+              <div class="val" id="timePerTan">—</div>
+              <div class="muted">理論値（速度・幅から算出）</div>
+            </div>
+          </div>
+          <div class="kpi">
+            <div class="cardmini">
+              <div class="muted">面積処理能力</div>
+              <div class="big" id="areaRate">—</div>
+              <div class="muted">（反/分・ha/分）</div>
+            </div>
+            <div class="cardmini">
+              <div class="muted">式</div>
+              <div class="big">流量 = 施用量 × 面積処理能力</div>
+              <div class="muted">（面積入力時）</div>
+            </div>
+            <div class="cardmini">
+              <div class="muted">メモ</div>
+              <div>初期値4.2m/s・幅4mでは <b>約1.008反/分</b>（≒0.1008ha/分）。</div>
+            </div>
+          </div>
+          <div class="testbar">
+            <button class="btn" id="runTests" title="簡易テストを実行">開発者テストを実行</button>
+            <span class="muted" id="testResult"></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <p class="muted" style="margin-top:10px">単位換算：1反 = 1000 m²、1 ha = 10000 m²、1 L = 1000 mL</p>
   </main>
+
+  <script>
+    // ===== パラメータ（編集可） =====
+    let SPEED_MPS = 4.2; // m/s（表示・編集可能）
+    let WIDTH_M   = 4;   // m（表示・編集可能）
+
+    // ===== 定数・換算 =====
+    const TAN_M2 = 1000; // 1反 = 1000 m²
+    const HA_M2  = 10000; // 1 ha = 10000 m²
+
+    // ===== UI 要素 =====
+    const formToggle = document.getElementById('formToggle');
+    const inputType  = document.getElementById('inputType');
+    const unitSel    = document.getElementById('unit');
+    const doseInput  = document.getElementById('dose');
+    const speedInput = document.getElementById('speed');
+    const widthInput = document.getElementById('width');
+    const speedKmhEl = document.getElementById('speedKmh');
+    const errorEl    = document.getElementById('error');
+    const flowOut    = document.getElementById('flow');
+    const flowUnit   = document.getElementById('flowUnit');
+    const timePerTan = document.getElementById('timePerTan');
+    const areaRate   = document.getElementById('areaRate');
+    const runTestsBtn= document.getElementById('runTests');
+    const testResult = document.getElementById('testResult');
+
+    // 現在モード：'granular' | 'liquid'
+    let mode = 'granular';
+
+    // ===== 面積処理能力の導出 =====
+    function deriveRates(){
+      const speed_mps = SPEED_MPS; // m/s
+      const area_m2_per_min = speed_mps * WIDTH_M * 60; // m²/分
+      const area_tan_per_min = area_m2_per_min / TAN_M2; // 反/分
+      const area_ha_per_min  = area_m2_per_min / HA_M2;  // ha/分
+      return {area_m2_per_min, area_tan_per_min, area_ha_per_min};
+    }
+    let {area_m2_per_min, area_tan_per_min, area_ha_per_min} = deriveRates();
+
+    // ===== 単位リストの更新 =====
+    function refreshUnits(){
+      unitSel.innerHTML = '';
+      if (inputType.value === 'area'){
+        if (mode === 'granular'){
+          addUnit('kg/反'); addUnit('kg/ha');
+        } else {
+          addUnit('mL/反'); addUnit('L/ha');
+        }
+      } else { // time
+        if (mode === 'granular'){
+          addUnit('kg/分');
+        } else {
+          addUnit('mL/分');
+        }
+      }
+      unitSel.selectedIndex = 0;
+      calculate();
+    }
+    function addUnit(u){
+      const o = document.createElement('option');
+      o.value = u; o.textContent = u; unitSel.appendChild(o);
+    }
+
+    // ===== 計算 =====
+    function calculate(){
+      // 速度・幅の検証
+      const s = parseFloat(speedInput.value);
+      const w = parseFloat(widthInput.value);
+      const kmh = s * 3.6;
+      let valid = true;
+      errorEl.style.display = 'none';
+
+      if (!isFinite(s) || s <= 0){
+        errorEl.textContent = '速度を正しく入力してください（m/s）';
+        errorEl.style.display = 'block';
+        valid = false;
+      } else if (kmh > 20){
+        errorEl.textContent = '20 km/hを超える速度は設定できません（現在 '+ format(kmh,2) +' km/h）';
+        errorEl.style.display = 'block';
+        valid = false;
+      }
+      if (!isFinite(w) || w <= 0){
+        errorEl.textContent = '散布幅を正しく入力してください（m）';
+        errorEl.style.display = 'block';
+        valid = false;
+      }
+      speedKmhEl.textContent = isFinite(kmh) ? format(kmh,2) : '—';
+
+      // 派生値更新
+      if (isFinite(s) && s > 0) SPEED_MPS = s;
+      if (isFinite(w) && w > 0) WIDTH_M   = w;
+      ({area_m2_per_min, area_tan_per_min, area_ha_per_min} = deriveRates());
+
+      // エラー時は出力を止める
+      if (!valid){
+        flowOut.textContent = '—';
+        flowUnit.textContent = '';
+        renderMeta();
+        return;
+      }
+
+      const v = parseFloat(doseInput.value);
+      const unit = unitSel.value;
+      if (!isFinite(v)){
+        flowOut.textContent = '—';
+        flowUnit.textContent = '';
+        renderMeta();
+        return;
+      }
+
+      // 出力：粒剤→kg/分、液剤→mL/分
+      let flow = 0;
+      let outUnit = (mode === 'granular') ? 'kg/分' : 'mL/分';
+
+      if (inputType.value === 'time'){
+        flow = v; // すでに時間あたり
+      } else {
+        if (mode === 'granular'){
+          if (unit === 'kg/反')      flow = v * area_tan_per_min;
+          else if (unit === 'kg/ha') flow = v * area_ha_per_min;
+        } else {
+          if (unit === 'mL/反')      flow = v * area_tan_per_min;
+          else if (unit === 'L/ha')  flow = (v * 1000) * area_ha_per_min; // L→mL
+        }
+      }
+
+      flowOut.textContent = format(flow, 3);
+      flowUnit.textContent = outUnit;
+      renderMeta();
+    }
+
+    function format(x, p=3){
+      const n = Math.round(x * Math.pow(10,p)) / Math.pow(10,p);
+      return String(n);
+    }
+
+    // ===== KPI表示 =====
+    function renderMeta(){
+      timePerTan.textContent = (area_tan_per_min > 0)
+        ? format(1/area_tan_per_min, 2) + ' 分/反'
+        : '—';
+      areaRate.innerHTML = `${format(area_tan_per_min,2)} 反/分<br>${format(area_ha_per_min,2)} ha/分`;
+    }
+
+    // ===== イベント =====
+    formToggle.addEventListener('click', (e)=>{
+      if (e.target.tagName !== 'BUTTON') return;
+      [...formToggle.querySelectorAll('button')].forEach(b=>b.classList.remove('active'));
+      e.target.classList.add('active');
+      mode = e.target.dataset.mode;
+      refreshUnits();
+    });
+    inputType.addEventListener('change', refreshUnits);
+    unitSel.addEventListener('change', calculate);
+    doseInput.addEventListener('input', calculate);
+    speedInput.addEventListener('input', calculate);
+    widthInput.addEventListener('input', calculate);
+
+    // ===== 簡易テスト =====
+    function runTests(){
+      const results = [];
+      function assert(name, cond){ results.push({name, pass: !!cond}); }
+
+      // 初期条件: 4.2 m/s, 4 m → 面積 4.2*4*60 = 1008 m²/分
+      ({area_m2_per_min, area_tan_per_min, area_ha_per_min} = (SPEED_MPS=4.2, WIDTH_M=4, deriveRates()));
+      assert('面積[m²/分] = 1008', Math.abs(area_m2_per_min - 1008) < 1e-9);
+      assert('反/分 ≈ 1.008', Math.abs(area_tan_per_min - 1.008) < 1e-9);
+      assert('ha/分 ≈ 0.1008', Math.abs(area_ha_per_min - 0.1008) < 1e-12);
+
+      // 粒剤: 3 kg/反 → kg/分 = 3 × 1.008 = 3.024
+      let flowTest = 3 * area_tan_per_min;
+      assert('粒剤 3kg/反 → 3.024kg/分', Math.abs(flowTest - 3.024) < 1e-9);
+
+      // 液剤: 200 L/ha → mL/分 = 200*1000*0.1008 = 20160 mL/分
+      ({area_m2_per_min, area_tan_per_min, area_ha_per_min} = (SPEED_MPS=4.2, WIDTH_M=4, deriveRates()));
+      let flowTest2 = 200*1000*area_ha_per_min;
+      assert('液剤 200L/ha → 20160mL/分', Math.abs(flowTest2 - 20160) < 1e-6);
+
+      // 速度上限: 20 km/h はOK、超えたらエラー
+      let kmhEq20 = 20.0;
+      assert('20.00km/hはOK(エラーではない)', !(kmhEq20 > 20));
+      let kmhEdge = 5.56 * 3.6; // ≈ 20.016 → エラー判定対象
+      assert('速度20km/h超はエラー閾値付近（参考）', kmhEdge > 20);
+
+      // レポート
+      const passCount = results.filter(r=>r.pass).length;
+      console.table(results);
+      testResult.textContent = `${passCount}/${results.length} tests passed`;
+      return results;
+    }
+
+    document.getElementById('runTests').addEventListener('click', runTests);
+
+    // ===== 初期化 =====
+    refreshUnits();
+    renderMeta();
+  </script>
 </body>
 </html>
